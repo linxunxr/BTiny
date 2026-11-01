@@ -11,10 +11,25 @@ tauri-build = { version = "2", features = [] }
 # tray-only 实测修正：tauri 2.12 无 wry feature 时不存在可用的 Runtime 实现
 # （Runtime 唯一实现 Wry 被该 feature 门控），故仍编译 wry 但运行时永不创建
 # WebviewWindow——进程树中同样不出现 msedgewebview2，代价只是体积。
-tauri-plugin-notification = "2"
 tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "common-controls-v6"] }
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+# 与 tauri 内部同一份 tokio（不增加体积），仅为 select!/mpsc/timeout 的直接调用
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+# 版本与 tauri 传递依赖对齐（0.62），避免双份编译；feature 只开所需（规格 7 章体积风险对策）
+windows = { version = "0.62", features = [
+    "Devices_Bluetooth",
+    "Devices_Bluetooth_GenericAttributeProfile",
+    "Storage_Streams",
+    "Win32_Devices_Bluetooth",
+    "Win32_Devices_Properties",
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
-# Spike 基线目标：体积 ≤ 3 MB、空闲工作集 ≤ 20 MB（见 产品规格说明书.md NFR-01/02）
+# Spike 锚定基线：空壳 2.49 MB；指标 4 MB / Private 8 MB / CPU 0.1%（见 产品规格说明书.md V1.2）
 [profile.release]
 lto = true
 codegen-units = 1
