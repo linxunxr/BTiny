@@ -1,0 +1,23 @@
+[package]
+name = "btiny"
+version = "0.1.0"
+edition = "2021"
+description = "BTiny（蓝量）— Windows 托盘蓝牙电量工具"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# tray-only 实测修正：tauri 2.12 无 wry feature 时不存在可用的 Runtime 实现
+# （Runtime 唯一实现 Wry 被该 feature 门控），故仍编译 wry 但运行时永不创建
+# WebviewWindow——进程树中同样不出现 msedgewebview2，代价只是体积。
+tauri-plugin-notification = "2"
+tauri = { version = "2", default-features = false, features = ["wry", "tray-icon", "common-controls-v6"] }
+
+# Spike 基线目标：体积 ≤ 3 MB、空闲工作集 ≤ 20 MB（见 产品规格说明书.md NFR-01/02）
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+panic = "abort"
