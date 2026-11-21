@@ -4,6 +4,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bluetooth;
+mod hidpp;
 mod icon;
 mod notify;
 mod tray;
@@ -98,12 +99,23 @@ fn handle_menu_event(app: &AppHandle, event: tauri::menu::MenuEvent) {
 async fn scan_loop(app: AppHandle, mut rx: tokio::sync::mpsc::Receiver<()>) {
     let mut notifier = notify::LowBatteryNotifier::default();
     loop {
+        // 双路径并列（FR-01 蓝牙 + FR-05 2.4G 罗技），全部在后台线程/异步上下文
         let outcome = bluetooth::scan_once().await;
-        debug_log(&outcome);
-        update_tray(&app, &outcome);
-        if let ScanOutcome::Devices(devices) = &outcome {
+        let (radio_ok, devices) = match outcome {
+            ScanOutcome::RadioUnavailable => (false, Vec::new()),
+            ScanOutcome::Devices(v) => (true, v),
+        };
+        let mut devices = devices;
+        devices.extend(
+            tokio::task::spawn_blocking(hidpp::scan_receivers)
+                .await
+                .unwrap_or_default(),
+        );
+        debug_log(radio_ok, &devices);
+        update_tray(&app, radio_ok, &devices);
+        {
             let notify_app = app.clone();
-            notifier.on_scan(devices, |title, body| {
+            notifier.on_scan(&devices, |title, body| {
                 let _ = notify_app.notification().builder().title(title).body(body).show();
             });
         }
@@ -114,9 +126,9 @@ async fn scan_loop(app: AppHandle, mut rx: tokio::sync::mpsc::Receiver<()>) {
     }
 }
 
-fn update_tray(app: &AppHandle, outcome: &ScanOutcome) {
+fn update_tray(app: &AppHandle, radio_ok: bool, devices: &[crate::bluetooth::DeviceStatus]) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
-    match tray::decide(outcome) {
+    match tray::decide(radio_ok, devices) {
         TrayState::RadioOff => {
             let _ = tray.set_icon(Some(icon::render(tray_icon_size(), &icon::IconContent::Unreadable)));
             let _ = tray.set_tooltip(Some("蓝牙已关闭或不可用"));
@@ -140,16 +152,14 @@ fn tray_icon_size() -> u32 {
 
 /// 调试日志：仅在环境变量 BTINY_DEBUG 存在时把每轮扫描结果追加到 btiny-debug.log，
 /// 正常运行零输出零磁盘写入（NFR-01 依赖项约束）。DoD 功能验收用。
-fn debug_log(outcome: &ScanOutcome) {
+fn debug_log(radio_ok: bool, devices: &[crate::bluetooth::DeviceStatus]) {
     if std::env::var_os("BTINY_DEBUG").is_none() {
         return;
     }
-    let line = match outcome {
-        ScanOutcome::RadioUnavailable => "蓝牙不可用".to_string(),
-        ScanOutcome::Devices(v) => format!(
-            "{} 台: {}",
-            v.len(),
-            v.iter()
+    let line = format!(
+        "radio={} {} 台: {}", if radio_ok { "OK" } else { "不可用" }, devices.len(),
+            devices
+                .iter()
                 .map(|d| {
                     let a = d.address;
                     format!(
@@ -164,10 +174,9 @@ fn debug_log(outcome: &ScanOutcome) {
                         d.battery
                     )
                 })
-                .collect::<Vec<_>>()
-                .join(";  ")
-        ),
-    };
+            .collect::<Vec<_>>()
+            .join(";  ")
+    );
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)

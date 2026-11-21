@@ -1,7 +1,7 @@
 //! 托盘状态决策：图标四态优先级与 tooltip 组装（FR-02）。
+//! V1.1 起输入为蓝牙 + 2.4G 罗技合并后的设备列表。
 
 use crate::bluetooth::DeviceStatus;
-use crate::bluetooth::ScanOutcome;
 use crate::icon::IconContent;
 
 const TOOLTIP_MAX_DEVICES: usize = 5;
@@ -9,28 +9,26 @@ const TOOLTIP_MAX_DEVICES: usize = 5;
 pub enum TrayState {
     /// 图标内容 + tooltip 全文
     Rendered(IconContent, String),
-    /// 蓝牙无线电不可用（并入"无法读取"态，FR-02 蓝牙关闭）
+    /// 蓝牙无线电不可用（并入"无法读取"态，FR-02 蓝牙关闭；
+    /// 注意 2.4G 设备在时不会进入此态——仍有可显示数据）
     RadioOff,
 }
 
 /// 状态优先级：低电量 > 无法读取 > 正常；空态独立（FR-02 图标状态）。
-pub fn decide(outcome: &ScanOutcome) -> TrayState {
-    match outcome {
-        ScanOutcome::RadioUnavailable => TrayState::RadioOff,
-        ScanOutcome::Devices(devices) => {
-            if devices.is_empty() {
-                return TrayState::Rendered(
-                    IconContent::Empty,
-                    "无已连接蓝牙设备".to_string(),
-                );
-            }
-            let min = devices.iter().filter_map(|d| d.battery).min();
-            let content = match min {
-                Some(v) => IconContent::Percent(v),
-                None => IconContent::Unreadable,
-            };
-            TrayState::Rendered(content, tooltip(devices))
+pub fn decide(radio_ok: bool, devices: &[DeviceStatus]) -> TrayState {
+    if devices.is_empty() {
+        if radio_ok {
+            TrayState::Rendered(IconContent::Empty, "无已连接设备".to_string())
+        } else {
+            TrayState::RadioOff
         }
+    } else {
+        let min = devices.iter().filter_map(|d| d.battery).min();
+        let content = match min {
+            Some(v) => IconContent::Percent(v),
+            None => IconContent::Unreadable,
+        };
+        TrayState::Rendered(content, tooltip(devices))
     }
 }
 
