@@ -68,7 +68,7 @@ pub fn render(size: u32, content: &IconContent) -> Image<'static> {
                     for dx in 0..factor as i32 {
                         let x = ox + (char_idx as i32 * 6 + col) * factor as i32 + dx;
                         let y = oy + row * factor as i32 + dy;
-                        put(&mut buf, s, x, y, fr, fg, fb, 255);
+                        put(&mut buf, s, x, y, (fr, fg, fb, 255));
                     }
                 }
             }
@@ -77,7 +77,8 @@ pub fn render(size: u32, content: &IconContent) -> Image<'static> {
     Image::new_owned(buf, s as u32, s as u32)
 }
 
-fn put(buf: &mut [u8], s: i32, x: i32, y: i32, r: u8, g: u8, b: u8, a: u8) {
+fn put(buf: &mut [u8], s: i32, x: i32, y: i32, rgba: (u8, u8, u8, u8)) {
+    let (r, g, b, a) = rgba;
     if x < 0 || y < 0 || x >= s || y >= s {
         return;
     }
@@ -98,7 +99,7 @@ fn fill_round(buf: &mut [u8], s: i32, r: u8, g: u8, b: u8, a: u8, radius: i32) {
             if corner && (x - cx) * (x - cx) + (y - cy) * (y - cy) > radius * radius {
                 continue;
             }
-            put(buf, s, x, y, r, g, b, a);
+            put(buf, s, x, y, (r, g, b, a));
         }
     }
 }

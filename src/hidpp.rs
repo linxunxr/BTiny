@@ -38,7 +38,7 @@ const FEATURE_DEVICE_NAME: [u8; 3] = [0x00, 0x05, 0x00];
 const DEVICE_INDICES: std::ops::RangeInclusive<u8> = 0x01..=0x06;
 const REQUEST_TIMEOUT: Duration = Duration::from_millis(900);
 /// 2.4G 设备无蓝牙地址，用魔数 + 设备位合成稳定 key（仅用于低电量通知去重）
-const HIDPP_ADDR_BASE: u64 = 0x4C4F4749_0000_0000;
+const HIDPP_ADDR_BASE: u64 = 0x4C4F_4749_0000_0000;
 
 /// 扫描全部罗技接收器上的已连接设备。任何失败静默跳过（尽力而为语义同 FR-01）。
 pub fn scan_receivers() -> Vec<DeviceStatus> {
@@ -267,8 +267,7 @@ impl Channel {
             out[4..REPORT_LONG_LEN].copy_from_slice(params);
 
             let _event_guard = EventGuard::new()?;
-            let mut ov = OVERLAPPED::default();
-            ov.hEvent = _event_guard.0;
+            let mut ov = overlapped_with(_event_guard.0);
             // windows 0.62 把 ERROR_IO_PENDING 也包装成 Err——那是 overlapped 正常挂起，须当已提交
             if let Err(e) = WriteFile(self.handle, Some(&out), None, Some(&mut ov)) {
                 if e.code().0 != -0x7FF8_FC1B {
@@ -288,8 +287,7 @@ impl Channel {
                 }
                 let mut inp = vec![0u8; self.input_len];
                 let guard = EventGuard::new()?;
-                let mut ov2 = OVERLAPPED::default();
-                ov2.hEvent = guard.0;
+                let mut ov2 = overlapped_with(guard.0);
                 if let Err(e) = ReadFile(self.handle, Some(&mut inp), None, Some(&mut ov2)) {
                     if e.code().0 != -0x7FF8_FC1B {
                         return None;
@@ -298,11 +296,11 @@ impl Channel {
                 if WaitForSingleObject(ov2.hEvent, remain.as_millis().min(u32::MAX as u128) as u32)
                     != WAIT_OBJECT_0
                 {
-                    let _ = CancelIoEx(self.handle, Some(&mut ov2));
+                    let _ = CancelIoEx(self.handle, Some(&ov2));
                     return None;
                 }
                 let mut read = 0u32;
-                if GetOverlappedResult(self.handle, &mut ov2, &mut read, false).is_err() {
+                if GetOverlappedResult(self.handle, &ov2, &mut read, false).is_err() {
                     return None;
                 }
                 if read < 4 {
@@ -326,6 +324,13 @@ impl Channel {
         let next = self.sw.get() % 15 + 1; // 1..=15 循环，0 保留
         self.sw.set(next);
         next
+    }
+}
+
+fn overlapped_with(event: HANDLE) -> OVERLAPPED {
+    OVERLAPPED {
+        hEvent: event,
+        ..Default::default()
     }
 }
 
