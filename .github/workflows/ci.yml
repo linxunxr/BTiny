@@ -61,3 +61,34 @@ jobs:
         with:
           files: target/${{ env.TARGET }}/release/btiny.exe
           generate-release-notes: true
+
+      # 鹊桥同款：Release 资产经 gitee-sync 云函数中转到 Gitee（香港 Region
+      # 治 runner 直传跨洲超时；多仓库共用同一函数，GITEE_SYNC_URL/SYNC_SECRET
+      # 与 QueQiao/DeepSeek-Otter 仓库同款约定）。secrets 未配置跳过不阻塞发版。
+      - name: 同步 btiny.exe 到 Gitee Release（云函数中转，可选）
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITEE_SYNC_URL: ${{ secrets.GITEE_SYNC_URL }}
+          SYNC_SECRET: ${{ secrets.SYNC_SECRET }}
+        shell: bash
+        run: |
+          if [ -z "${GITEE_SYNC_URL}" ] || [ -z "${SYNC_SECRET}" ]; then
+            echo "未配置 GITEE_SYNC_URL/SYNC_SECRET secrets，跳过 Gitee 资产中转"
+            exit 0
+          fi
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "同步 btiny.exe → Gitee Release（云函数中转）"
+          # -G --data-urlencode：secret 含 +/&/空格等字符时直拼 URL 会被网关解码变形（鹊桥同款教训）
+          code=$(curl -s -o gitee-sync-resp.json -w "%{http_code}" --max-time 600 -G \
+            --data-urlencode "secret=${SYNC_SECRET}" \
+            --data-urlencode "version=${VERSION}" \
+            --data-urlencode "gh_repo=linxunxr/BTiny" \
+            --data-urlencode "owner=mwcxlinxun" \
+            --data-urlencode "repo=BTiny" \
+            --data-urlencode "files=btiny.exe" \
+            "${GITEE_SYNC_URL}")
+          cat gitee-sync-resp.json || true
+          if [ "$code" != "200" ]; then
+            echo "::warning::Gitee 资产中转未成功（HTTP ${code}）——不阻塞发版，可手动跑 Resync Gitee 工作流（云函数幂等）"
+          fi
