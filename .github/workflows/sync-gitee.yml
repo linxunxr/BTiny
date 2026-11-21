@@ -1,0 +1,21 @@
+# 镜像同步：GitHub → Gitee（runner 境外出口，双向直连两站均畅通）。
+# 依赖仓库 Secrets：GITEE_USER（Gitee 用户名）、GITEE_TOKEN（Gitee 私人令牌，
+# 需 projects 权限）。Gitee 侧需预先存在同名空仓库（勿勾选初始化 README）。
+name: Sync to Gitee
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    # Secrets 未配置时跳过（首次推送或仅用 GitHub 时保持绿色）
+    if: ${{ secrets.GITEE_TOKEN != '' }}
+    steps:
+      - name: bare clone 并镜像推送
+        run: |
+          git clone --bare "https://github.com/${{ github.repository }}.git" repo.git
+          cd repo.git
+          git push --mirror "https://${{ secrets.GITEE_USER }}:${{ secrets.GITEE_TOKEN }}@gitee.com/${{ secrets.GITEE_USER }}/BTiny.git"
